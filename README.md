@@ -11,6 +11,11 @@ parent directory.
   redirect, no API) and install it by running the repo's own `install.sh`
   against the running binary's directory. Includes `NewUpdateCommand`, the
   shared cobra `update` command used by the apps.
+- `stream` — run a subprocess and relay its stdout+stderr to a `Reporter` one
+  line at a time as it arrives (splitting on `\r` as well as `\n`, so progress
+  bars stream), folding the last line into the error on a non-zero exit. The
+  command-streaming machinery behind gitstack's `GitStream` and golaunch's
+  script runner.
 
 ## Development
 
