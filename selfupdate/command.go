@@ -28,15 +28,14 @@ With no flags it downloads and installs the update when one is available, in pla
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(repo, name, version, checkOnly)
+			return runUpdate(cmd.Context(), repo, name, version, checkOnly)
 		},
 	}
 	cmd.Flags().BoolVar(&checkOnly, "check", false, "only check for an update; don't download or install")
 	return cmd
 }
 
-func runUpdate(repo, name, version string, checkOnly bool) error {
-	ctx := context.Background()
+func runUpdate(ctx context.Context, repo, name, version string, checkOnly bool) error {
 	info, err := Check(ctx, repo, version)
 	if err != nil {
 		return err

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Info is the outcome of Check: the running version, the latest release tag,
@@ -125,6 +126,7 @@ var (
 // reads the tag off the Location header.
 func latestTag(ctx context.Context, url string) (string, error) {
 	client := &http.Client{
+		Timeout: 30 * time.Second, // matches bubblestack's selfUpdateCheckTimeout
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
