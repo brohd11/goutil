@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -152,5 +154,62 @@ func TestNewUpdateCommand(t *testing.T) {
 	}
 	if cmd.Flags().Lookup("check") == nil {
 		t.Error("want a --check flag")
+	}
+}
+
+func TestScriptName(t *testing.T) {
+	cases := map[string]string{
+		"windows": "install.ps1",
+		"darwin":  "install.sh",
+		"linux":   "install.sh",
+	}
+	for goos, want := range cases {
+		if got := scriptName(goos); got != want {
+			t.Errorf("scriptName(%q) = %q, want %q", goos, got, want)
+		}
+	}
+}
+
+func TestInterpreterUnix(t *testing.T) {
+	argv, err := interpreter("linux", "/tmp/install.sh")
+	if err != nil {
+		t.Fatalf("interpreter: %v", err)
+	}
+	want := []string{"sh", "/tmp/install.sh", "--no-modify-path"}
+	if len(argv) != len(want) {
+		t.Fatalf("argv = %q, want %q", argv, want)
+	}
+	for i := range want {
+		if argv[i] != want[i] {
+			t.Fatalf("argv = %q, want %q", argv, want)
+		}
+	}
+}
+
+// The Windows branch depends on a PowerShell being on PATH, which a Unix test
+// runner has no reason to have -- so assert on whichever outcome the machine
+// can produce. Either way the flags are the part that matters: Bypass is what
+// lets a just-downloaded script run, and --no-modify-path is what keeps an
+// installed binary from being asked about PATH again.
+func TestInterpreterWindows(t *testing.T) {
+	argv, err := interpreter("windows", `C:\tmp\install.ps1`)
+	if err != nil {
+		if _, lookErr := exec.LookPath("pwsh"); lookErr == nil {
+			t.Fatalf("pwsh is on PATH but interpreter failed: %v", err)
+		}
+		if !strings.Contains(err.Error(), "no PowerShell found") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return
+	}
+
+	joined := strings.Join(argv, " ")
+	for _, want := range []string{"-ExecutionPolicy Bypass", "-NoProfile", `-File C:\tmp\install.ps1`, "--no-modify-path"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("argv %q is missing %q", argv, want)
+		}
+	}
+	if argv[len(argv)-1] != "--no-modify-path" {
+		t.Errorf("argv %q must end in --no-modify-path", argv)
 	}
 }

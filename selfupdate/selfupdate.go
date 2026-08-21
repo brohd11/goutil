@@ -1,9 +1,10 @@
 // Package selfupdate implements the shared self-update mechanism for the
 // brohd11 Go apps: check GitHub for a newer release and, when one exists,
-// install it by running the same install.sh the READMEs tell users to curl —
-// with BIN_DIR pointed at the running binary's directory so the update lands
-// in place, and --no-modify-path so an installed binary is never asked about
-// PATH again.
+// install it by running the same installer the READMEs tell users to fetch —
+// install.sh under sh on Unix, install.ps1 under PowerShell on Windows — with
+// BIN_DIR pointed at the running binary's directory so the update lands in
+// place, and --no-modify-path so an installed binary is never asked about PATH
+// again.
 //
 // Check resolves the latest tag via the /releases/latest redirect, so neither
 // the check nor the install touches the rate-limited GitHub API.
@@ -18,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -48,10 +50,12 @@ func Check(ctx context.Context, repo, current string) (Info, error) {
 }
 
 // Apply installs info.LatestTag of repo ("owner/name") into binDir by
-// downloading install.sh and running it with BIN_DIR=binDir and VERSION
-// pinned to the checked tag, so it installs exactly what Check saw.
-// Overwriting the running binary is safe: install.sh stages in a temp dir and
-// mv -f's into place. The script's output is streamed line-by-line to report.
+// downloading the platform's installer and running it with BIN_DIR=binDir and
+// VERSION pinned to the checked tag, so it installs exactly what Check saw.
+// Overwriting the running binary is safe: both installers stage in a temp dir
+// before moving into place, and the Windows one displaces the running .exe by
+// renaming it (Windows locks it against overwrite, but not against rename).
+// The script's output is streamed line-by-line to report.
 func Apply(ctx context.Context, repo string, info Info, binDir string, report func(string, ...any)) error {
 	if report == nil {
 		report = func(string, ...any) {}
@@ -62,17 +66,23 @@ func Apply(ctx context.Context, repo string, info Info, binDir string, report fu
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	script := filepath.Join(tmp, "install.sh")
 
-	// Download to a file rather than curling into sh: the env vars and the
-	// --no-modify-path flag are needed either way, and this keeps a failed
-	// download distinct from a failed install.
-	dl := exec.CommandContext(ctx, "curl", "-fsSL", "-o", script, installScriptURL(repo))
-	if out, err := dl.CombinedOutput(); err != nil {
-		return fmt.Errorf("downloading install.sh: %w\n%s", err, out)
+	name := scriptName(runtime.GOOS)
+	script := filepath.Join(tmp, name)
+
+	// Download to a file rather than piping into the interpreter: the env vars
+	// and the --no-modify-path flag are needed either way, and this keeps a
+	// failed download distinct from a failed install.
+	if err := download(ctx, installScriptURL(repo), script); err != nil {
+		return fmt.Errorf("downloading %s: %w", name, err)
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", script, "--no-modify-path")
+	argv, err := interpreter(runtime.GOOS, script)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(),
 		"BIN_DIR="+binDir,
 		"VERSION="+info.LatestTag,
@@ -94,7 +104,7 @@ func Apply(ctx context.Context, repo string, info Info, binDir string, report fu
 	pw.Close()
 	<-scanDone
 	if runErr != nil {
-		return fmt.Errorf("running install.sh: %w", runErr)
+		return fmt.Errorf("running %s: %w", name, runErr)
 	}
 	return nil
 }
@@ -118,9 +128,78 @@ var (
 		return "https://github.com/" + repo + "/releases/latest"
 	}
 	installScriptURL = func(repo string) string {
-		return "https://raw.githubusercontent.com/" + repo + "/main/install.sh"
+		return "https://raw.githubusercontent.com/" + repo + "/main/" + scriptName(runtime.GOOS)
 	}
 )
+
+// scriptName is the installer published for goos. Both live at the root of
+// every app repo and take the same BIN_DIR/VERSION env vars and the same
+// --no-modify-path flag, so nothing above this line has to care which is which.
+func scriptName(goos string) string {
+	if goos == "windows" {
+		return "install.ps1"
+	}
+	return "install.sh"
+}
+
+// interpreter is the argv for running script non-interactively, ending in the
+// --no-modify-path flag: an already-installed binary must never be asked about
+// PATH again.
+//
+// On Windows that means PowerShell with -ExecutionPolicy Bypass, without which
+// a script that was just downloaded refuses to run at all under the default
+// policy. pwsh (PowerShell 7) is preferred when installed and powershell
+// (Windows PowerShell 5.1, present on every Windows install) is the fallback.
+func interpreter(goos, script string) ([]string, error) {
+	if goos != "windows" {
+		return []string{"sh", script, "--no-modify-path"}, nil
+	}
+
+	shell := ""
+	for _, c := range []string{"pwsh", "powershell"} {
+		if p, err := exec.LookPath(c); err == nil {
+			shell = p
+			break
+		}
+	}
+	if shell == "" {
+		return nil, fmt.Errorf("no PowerShell found on PATH (looked for pwsh and powershell)")
+	}
+	return []string{
+		shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-File", script, "--no-modify-path",
+	}, nil
+}
+
+// download GETs url into path. This used to shell out to curl, which Windows
+// only reliably has as a PowerShell alias for Invoke-WebRequest -- and that
+// takes different arguments. net/http is already here for latestTag and
+// behaves the same on every platform.
+func download(ctx context.Context, url, path string) error {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s", url, resp.Status)
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
 
 // latestTag GETs the /releases/latest URL without following the redirect and
 // reads the tag off the Location header.
