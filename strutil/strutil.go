@@ -1,6 +1,6 @@
-// Package strutil holds the tiny string helpers that every app in the monorepo ended
-// up hand-rolling for itself — plural selection and home-dir expansion — so the next
-// app doesn't roll a fourth copy.
+// Package strutil holds the tiny string and path helpers that every app in the monorepo
+// ended up hand-rolling for itself — plural selection, home-dir expansion, path depth —
+// so the next app doesn't roll a fourth copy.
 package strutil
 
 import (
@@ -45,4 +45,21 @@ func ExpandHome(path string) (string, error) {
 		return "", fmt.Errorf("only ~/ paths are supported")
 	}
 	return path, nil
+}
+
+// Depth reports how many path segments separate path from base: 0 when they are the same
+// directory, 1 for a direct child, and so on. An unrelated path (one filepath.Rel cannot
+// express) is also 0, so a caller walking a tree treats it as the root rather than
+// letting a negative or garbage depth through.
+//
+// It exists because four copies of this arithmetic were in circulation — gitstack,
+// gdaddon twice (once inlined into a walk), and gote under the name dirDepth. A
+// depth-limited walk that is off by one silently stops finding things, which is the kind
+// of bug that gets noticed months later as "it missed a repo".
+func Depth(base, path string) int {
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == "." {
+		return 0
+	}
+	return strings.Count(rel, string(os.PathSeparator)) + 1
 }
