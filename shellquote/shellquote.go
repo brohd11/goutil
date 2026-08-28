@@ -10,9 +10,17 @@
 // Two spellings of the same guarantee: Quote/Join always quote, QuoteMinimal/JoinMinimal
 // leave a word bare when the shell would read it identically either way. Both are safe;
 // the Minimal pair is for text a human reads.
+//
+// Split is the inverse: it reads a quoted command line back into argv without running a
+// shell. It came from configcmd, where it parsed $EDITOR, and moved here when a TUI
+// wanted the same parse and could not import a cobra package to get it.
 package shellquote
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"unicode"
+)
 
 // Quote wraps s in single quotes as a POSIX single-quoted literal, so nothing inside is
 // expanded or word-split. Embedded single quotes are closed, escaped, and reopened --
@@ -65,4 +73,74 @@ func needsQuote(r rune) bool {
 		return false
 	}
 	return true
+}
+
+// Split parses the shell-style quoting convention commonly used in EDITOR
+// (for example `code --wait` or `"/path with spaces/editor" --flag`) without running
+// a shell. Backslashes only consume whitespace, a quote, or another backslash, which
+// keeps quoted Windows paths intact.
+func Split(raw string) ([]string, error) {
+	runes := []rune(raw)
+	var args []string
+	var word strings.Builder
+	var quote rune
+	inWord := false
+	flush := func() {
+		if inWord {
+			args = append(args, word.String())
+			word.Reset()
+			inWord = false
+		}
+	}
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if quote == 0 && unicode.IsSpace(r) {
+			flush()
+			continue
+		}
+		if r == '\'' {
+			if quote == '"' {
+				word.WriteRune(r)
+				inWord = true
+				continue
+			}
+			if quote == '\'' {
+				quote = 0
+			} else {
+				quote = '\''
+				inWord = true
+			}
+			continue
+		}
+		if r == '"' {
+			if quote == '\'' {
+				word.WriteRune(r)
+				inWord = true
+				continue
+			}
+			if quote == '"' {
+				quote = 0
+			} else {
+				quote = '"'
+				inWord = true
+			}
+			continue
+		}
+		if r == '\\' && quote != '\'' && i+1 < len(runes) {
+			next := runes[i+1]
+			if unicode.IsSpace(next) || next == '\\' || next == '\'' || next == '"' {
+				word.WriteRune(next)
+				inWord = true
+				i++
+				continue
+			}
+		}
+		word.WriteRune(r)
+		inWord = true
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated %c quote", quote)
+	}
+	flush()
+	return args, nil
 }

@@ -2,6 +2,7 @@ package shellquote
 
 import (
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -95,5 +96,29 @@ func TestQuoteMinimalLeavesSafeWordsBare(t *testing.T) {
 	// ...but an empty argument must still be quoted, or it disappears entirely.
 	if got := QuoteMinimal(""); got != "''" {
 		t.Errorf(`QuoteMinimal("") = %q, want "''"`, got)
+	}
+}
+
+// TestSplit is Join's inverse read back: the $EDITOR forms a user actually writes,
+// and the one malformed input the parser is allowed to refuse.
+func TestSplit(t *testing.T) {
+	tests := map[string][]string{
+		`code --wait`:                        {"code", "--wait"},
+		`"/path with spaces/editor" --wait`:  {"/path with spaces/editor", "--wait"},
+		`editor 'two words' plain`:           {"editor", "two words", "plain"},
+		`"C:\Program Files\Editor\edit.exe"`: {`C:\Program Files\Editor\edit.exe`},
+		`editor\ command`:                    {"editor command"},
+	}
+	for raw, want := range tests {
+		got, err := Split(raw)
+		if err != nil {
+			t.Fatalf("Split(%q): %v", raw, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Split(%q) = %#v, want %#v", raw, got, want)
+		}
+	}
+	if _, err := Split(`editor "unfinished`); err == nil {
+		t.Fatal("unterminated quote should fail")
 	}
 }

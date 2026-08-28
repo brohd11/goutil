@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"unicode"
 
+	"github.com/brohd11/goutil/shellquote"
 	"github.com/brohd11/goutil/sysopen"
 	"github.com/spf13/cobra"
 )
@@ -80,7 +80,7 @@ func runEditor(cmd *cobra.Command, path string) error {
 	if raw == "" {
 		return fmt.Errorf("neither EDITOR nor VISUAL is set")
 	}
-	argv, err := splitCommand(raw)
+	argv, err := shellquote.Split(raw)
 	if err != nil {
 		return fmt.Errorf("parse $%s: %w", name, err)
 	}
@@ -95,74 +95,4 @@ func runEditor(cmd *cobra.Command, path string) error {
 		return fmt.Errorf("editor %s: %w", argv[0], err)
 	}
 	return nil
-}
-
-// splitCommand parses the shell-style quoting convention commonly used in EDITOR
-// (for example `code --wait` or `"/path with spaces/editor" --flag`) without running
-// a shell. Backslashes only consume whitespace, a quote, or another backslash, which
-// keeps quoted Windows paths intact.
-func splitCommand(raw string) ([]string, error) {
-	runes := []rune(raw)
-	var args []string
-	var word strings.Builder
-	var quote rune
-	inWord := false
-	flush := func() {
-		if inWord {
-			args = append(args, word.String())
-			word.Reset()
-			inWord = false
-		}
-	}
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if quote == 0 && unicode.IsSpace(r) {
-			flush()
-			continue
-		}
-		if r == '\'' {
-			if quote == '"' {
-				word.WriteRune(r)
-				inWord = true
-				continue
-			}
-			if quote == '\'' {
-				quote = 0
-			} else {
-				quote = '\''
-				inWord = true
-			}
-			continue
-		}
-		if r == '"' {
-			if quote == '\'' {
-				word.WriteRune(r)
-				inWord = true
-				continue
-			}
-			if quote == '"' {
-				quote = 0
-			} else {
-				quote = '"'
-				inWord = true
-			}
-			continue
-		}
-		if r == '\\' && quote != '\'' && i+1 < len(runes) {
-			next := runes[i+1]
-			if unicode.IsSpace(next) || next == '\\' || next == '\'' || next == '"' {
-				word.WriteRune(next)
-				inWord = true
-				i++
-				continue
-			}
-		}
-		word.WriteRune(r)
-		inWord = true
-	}
-	if quote != 0 {
-		return nil, fmt.Errorf("unterminated %c quote", quote)
-	}
-	flush()
-	return args, nil
 }

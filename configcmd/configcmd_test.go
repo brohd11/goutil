@@ -3,32 +3,9 @@ package configcmd
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
-
-func TestSplitCommand(t *testing.T) {
-	tests := map[string][]string{
-		`code --wait`:                        {"code", "--wait"},
-		`"/path with spaces/editor" --wait`:  {"/path with spaces/editor", "--wait"},
-		`editor 'two words' plain`:           {"editor", "two words", "plain"},
-		`"C:\Program Files\Editor\edit.exe"`: {`C:\Program Files\Editor\edit.exe`},
-		`editor\ command`:                    {"editor command"},
-	}
-	for raw, want := range tests {
-		got, err := splitCommand(raw)
-		if err != nil {
-			t.Fatalf("splitCommand(%q): %v", raw, err)
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("splitCommand(%q) = %#v, want %#v", raw, got, want)
-		}
-	}
-	if _, err := splitCommand(`editor "unfinished`); err == nil {
-		t.Fatal("unterminated quote should fail")
-	}
-}
 
 func TestConfigCommandRunsEnsureAndEditor(t *testing.T) {
 	dir := t.TempDir()
