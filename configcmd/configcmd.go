@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/brohd11/goutil/shellquote"
@@ -26,17 +27,17 @@ type Options struct {
 var openPath = sysopen.OpenPath
 
 // NewCommand builds an opt-in `config` command. With no flag it edits the config
-// file using $EDITOR, falling back to $VISUAL. --dir opens the app's config directory
-// in the OS file manager instead.
+// file using $EDITOR, falling back to $VISUAL and then to Notepad on Windows. --dir
+// opens the app's config directory in the OS file manager instead.
 func NewCommand(opts Options) *cobra.Command {
 	var openDir bool
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Edit the application config",
 		Long: `config opens the application's config file with $EDITOR (or $VISUAL when
-$EDITOR is unset). Use --dir to open the containing config directory in the system
-file manager instead. A missing config is materialized first when the app provides
-defaults.`,
+$EDITOR is unset). On Windows, notepad.exe is used when neither variable is set. Use
+--dir to open the containing config directory in the system file manager instead. A
+missing config is materialized first when the app provides defaults.`,
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: false,
@@ -71,21 +72,9 @@ defaults.`,
 }
 
 func runEditor(cmd *cobra.Command, path string) error {
-	raw := strings.TrimSpace(os.Getenv("EDITOR"))
-	name := "EDITOR"
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv("VISUAL"))
-		name = "VISUAL"
-	}
-	if raw == "" {
-		return fmt.Errorf("neither EDITOR nor VISUAL is set")
-	}
-	argv, err := shellquote.Split(raw)
+	argv, err := editorArgs(runtime.GOOS)
 	if err != nil {
-		return fmt.Errorf("parse $%s: %w", name, err)
-	}
-	if len(argv) == 0 {
-		return fmt.Errorf("$%s does not name an editor", name)
+		return err
 	}
 	ed := exec.CommandContext(cmd.Context(), argv[0], append(argv[1:], path)...)
 	ed.Stdin = cmd.InOrStdin()
@@ -95,4 +84,30 @@ func runEditor(cmd *cobra.Command, path string) error {
 		return fmt.Errorf("editor %s: %w", argv[0], err)
 	}
 	return nil
+}
+
+// editorArgs resolves the editor independently of process launch so every platform's
+// policy can be tested on one host. Windows provides Notepad as the zero-configuration
+// fallback; explicit environment variables retain their usual priority everywhere.
+func editorArgs(goos string) ([]string, error) {
+	raw := strings.TrimSpace(os.Getenv("EDITOR"))
+	name := "EDITOR"
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("VISUAL"))
+		name = "VISUAL"
+	}
+	if raw == "" {
+		if goos == "windows" {
+			return []string{"notepad.exe"}, nil
+		}
+		return nil, fmt.Errorf("neither EDITOR nor VISUAL is set")
+	}
+	argv, err := shellquote.Split(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse $%s: %w", name, err)
+	}
+	if len(argv) == 0 {
+		return nil, fmt.Errorf("$%s does not name an editor", name)
+	}
+	return argv, nil
 }

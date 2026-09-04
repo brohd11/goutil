@@ -3,8 +3,8 @@
 ## Packages
 
 - `configcmd` — the shared opt-in Cobra `config` command: materialize an app's
-  defaults, edit its config through `$EDITOR`/`$VISUAL`, or open the config directory
-  with `config --dir`.
+  defaults, edit its config through `$EDITOR`/`$VISUAL` (falling back to Notepad on
+  Windows), or open the config directory with `config --dir`.
 - `configdir` — resolve the monorepo's `~/.<app>` config directories, load optional
   YAML, and save it atomically.
 - `selfupdate` — check GitHub for a newer release (via the `/releases/latest`
@@ -26,4 +26,3 @@
   apps: every option `install.sh` and `install.ps1` take, how each decides about
   `PATH`, and how `<binary> update` works. The app READMEs link here rather than
   restating it.
-

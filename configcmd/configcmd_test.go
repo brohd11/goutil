@@ -61,12 +61,31 @@ func TestConfigCommandFallsBackToVisual(t *testing.T) {
 	}
 }
 
-func TestConfigCommandRequiresEditor(t *testing.T) {
+func TestEditorArgsRequiresEditorOutsideWindows(t *testing.T) {
 	t.Setenv("EDITOR", "")
 	t.Setenv("VISUAL", "")
-	cmd := NewCommand(Options{Path: func() (string, error) { return "/tmp/config", nil }})
-	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "EDITOR") {
+	if _, err := editorArgs("linux"); err == nil || !strings.Contains(err.Error(), "EDITOR") {
 		t.Fatalf("error = %v, want an EDITOR/VISUAL explanation", err)
+	}
+}
+
+func TestEditorArgsFallsBackToNotepadOnWindows(t *testing.T) {
+	t.Setenv("EDITOR", " \t")
+	t.Setenv("VISUAL", "")
+	got, err := editorArgs("windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "notepad.exe" {
+		t.Fatalf("editor args = %q, want [notepad.exe]", got)
+	}
+}
+
+func TestEditorArgsDoesNotReplaceInvalidWindowsEditor(t *testing.T) {
+	t.Setenv("EDITOR", `"unterminated`)
+	t.Setenv("VISUAL", "")
+	if _, err := editorArgs("windows"); err == nil || !strings.Contains(err.Error(), "parse $EDITOR") {
+		t.Fatalf("error = %v, want the explicit EDITOR parse failure", err)
 	}
 }
 
