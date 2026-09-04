@@ -9,8 +9,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/brohd11/goutil/executil"
 )
 
 // Reporter is a sink for human-readable progress lines. A CLI prints them to stdout; a
@@ -31,7 +32,10 @@ func Cmd(ctx context.Context, dir string, env []string, report Reporter, argv ..
 		return fmt.Errorf("no command to run")
 	}
 	w := &lineWriter{report: report}
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd, err := executil.CommandContext(ctx, argv...)
+	if err != nil {
+		return err
+	}
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -41,7 +45,7 @@ func Cmd(ctx context.Context, dir string, env []string, report Reporter, argv ..
 	cmd.Stdout = w
 	cmd.Stderr = w
 
-	err := cmd.Run()
+	err = cmd.Run()
 	w.flush() // a final line with no trailing newline (an error message often has none)
 	if err != nil {
 		if w.last != "" {

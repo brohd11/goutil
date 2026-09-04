@@ -27,7 +27,9 @@ func TestPlural(t *testing.T) {
 }
 
 func TestExpandHome(t *testing.T) {
-	t.Setenv("HOME", "/home/tester")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	cases := []struct {
 		name    string
@@ -35,8 +37,9 @@ func TestExpandHome(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"bare tilde", "~", "/home/tester", false},
-		{"tilde path", "~/x", filepath.Join("/home/tester", "x"), false},
+		{"bare tilde", "~", home, false},
+		{"slash tilde path", "~/x/nested", filepath.Join(home, "x", "nested"), false},
+		{"backslash tilde path", `~\x\nested`, filepath.Join(home, "x", "nested"), false},
 		{"other user rejected", "~user/x", "", true},
 		{"absolute passthrough", "/var/tmp/x", "/var/tmp/x", false},
 		{"relative passthrough", "x/y", "x/y", false},

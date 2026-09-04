@@ -3,6 +3,7 @@ package shellquote
 import (
 	"os/exec"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -37,6 +38,9 @@ var cases = []string{
 // spellings must satisfy this -- QuoteMinimal is an readability optimization, never a
 // correctness exception.
 func TestRoundTripsThroughRealShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell quoting is exercised on Unix runners")
+	}
 	for _, quote := range []struct {
 		name string
 		fn   func(string) string
@@ -60,6 +64,9 @@ func TestRoundTripsThroughRealShell(t *testing.T) {
 // Join must preserve argument boundaries, not just contents: the count is the half that
 // silently breaks when an empty or space-bearing argument is mishandled.
 func TestJoinPreservesArgumentBoundaries(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell quoting is exercised on Unix runners")
+	}
 	for _, join := range []struct {
 		name string
 		fn   func([]string) string

@@ -21,7 +21,7 @@ func Plural(n int, one, many string) string {
 	return many
 }
 
-// ExpandHome expands a leading "~" or "~/..." to the current user's home directory
+// ExpandHome expands a leading "~", "~/...", or "~\\..." to the current user's home directory
 // and passes every other path through unchanged. "~user" forms are rejected rather
 // than guessed: only the current user's home shorthand is supported, and accepting
 // a literal "~other" as a path is never what the user meant.
@@ -30,19 +30,23 @@ func Plural(n int, one, many string) string {
 // trim/empty validation and its must-exist-and-be-a-directory check — callers decide
 // what the path has to be; this helper only resolves the tilde.
 func ExpandHome(path string) (string, error) {
-	if path == "~" || strings.HasPrefix(path, "~"+string(filepath.Separator)) {
+	if path == "~" || len(path) > 1 && path[0] == '~' && (path[1] == '/' || path[1] == '\\') {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		rest := strings.TrimPrefix(path, "~"+string(filepath.Separator))
-		if rest == "~" { // bare "~" — nothing follows the tilde to join
+		if path == "~" {
 			return home, nil
 		}
+		rest := strings.TrimLeft(path[1:], `/\`)
+		// Tilde paths are user-facing rather than native filesystem literals. Treat
+		// both separator spellings consistently so copied examples work unchanged
+		// in PowerShell and Unix shells.
+		rest = strings.NewReplacer("/", string(filepath.Separator), "\\", string(filepath.Separator)).Replace(rest)
 		return filepath.Join(home, rest), nil
 	}
 	if strings.HasPrefix(path, "~") {
-		return "", fmt.Errorf("only ~/ paths are supported")
+		return "", fmt.Errorf("only ~/ or ~\\ paths are supported")
 	}
 	return path, nil
 }

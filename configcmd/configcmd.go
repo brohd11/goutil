@@ -6,10 +6,10 @@ package configcmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 
+	"github.com/brohd11/goutil/executil"
 	"github.com/brohd11/goutil/shellquote"
 	"github.com/brohd11/goutil/sysopen"
 	"github.com/spf13/cobra"
@@ -76,7 +76,10 @@ func runEditor(cmd *cobra.Command, path string) error {
 	if err != nil {
 		return err
 	}
-	ed := exec.CommandContext(cmd.Context(), argv[0], append(argv[1:], path)...)
+	ed, err := executil.CommandContext(cmd.Context(), append(argv, path)...)
+	if err != nil {
+		return fmt.Errorf("editor %s: %w", argv[0], err)
+	}
 	ed.Stdin = cmd.InOrStdin()
 	ed.Stdout = cmd.OutOrStdout()
 	ed.Stderr = cmd.ErrOrStderr()

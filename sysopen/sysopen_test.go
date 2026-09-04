@@ -21,7 +21,7 @@ func TestPathCommand(t *testing.T) {
 		{"windows open", "windows", `C:\work`, false, []string{"explorer", `C:\work`}},
 		{"windows reveal", "windows", `C:\work\a.yml`, true, []string{"explorer", `/select,C:\work\a.yml`}},
 		{"linux open", "linux", "/tmp/work", false, []string{"xdg-open", "/tmp/work"}},
-		{"linux reveal", "linux", "/tmp/work/a.yml", true, []string{"xdg-open", "/tmp/work"}},
+		{"linux reveal", "linux", "/tmp/work/a.yml", true, []string{"xdg-open", filepath.Dir("/tmp/work/a.yml")}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

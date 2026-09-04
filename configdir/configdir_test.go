@@ -3,12 +3,14 @@ package configdir
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 
 	got, err := Dir("myapp")
 	if err != nil {
@@ -90,7 +92,7 @@ func TestSaveAtomicCreatesDirAndOverwrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o644 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o644 {
 		t.Errorf("saved file mode = %o, want 644", perm)
 	}
 	// The temp file must be cleaned up, not left littering the config dir.
