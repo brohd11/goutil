@@ -29,7 +29,10 @@ func TestCmdMultiLineOutput(t *testing.T) {
 
 func TestCmdCarriageReturnProgress(t *testing.T) {
 	var lines []string
-	err := Cmd(context.Background(), "", nil, collect(&lines), "sh", "-c", "printf '10%%\r50%%\r100%%\r'")
+	// Pass printable escape sequences to the shell and let printf produce the
+	// carriage-return bytes. Literal CRs in a Windows command line can be
+	// consumed while Git's sh translates its argv.
+	err := Cmd(context.Background(), "", nil, collect(&lines), "sh", "-c", "printf '10%%\\r50%%\\r100%%\\r'")
 	if err != nil {
 		t.Fatal(err)
 	}
