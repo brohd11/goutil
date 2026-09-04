@@ -229,12 +229,12 @@ Every one of these apps registers the same `update` command:
 
 It works on all three platforms and resolves the latest tag from the `/releases/latest`
 redirect rather than the GitHub API, so neither checking nor installing is subject to API
-rate limits. When an update exists, it downloads the same installer the docs tell you to
-fetch — `install.sh` under `sh`, or `install.ps1` under PowerShell on Windows — and runs
-it with `BIN_DIR` set to the directory the running binary lives in and `VERSION` pinned
-to the tag it just checked. So the update lands exactly where the binary already is, and
-installs exactly what the check saw. `--no-modify-path` is passed too: an
-already-installed binary should never ask about `PATH` again.
+rate limits. When an update exists, it runs the same installer the docs tell you to fetch:
+`install.sh` under `sh`, or an in-memory `Invoke-RestMethod`/PowerShell scriptblock on
+Windows. It sets `BIN_DIR` to the directory the running binary lives in and pins `VERSION`
+to the tag it just checked. So the update lands exactly where the binary already is and
+installs exactly what the check saw. `--no-modify-path` is passed too: an already-installed
+binary should never ask about `PATH` again.
 
 Overwriting the running binary is safe. Both installers stage the download in a temp
 directory and only move it into place once the archive extracts cleanly, so a failed
@@ -271,12 +271,12 @@ the line in the current one. On Windows the same thing reads
 `The term '<binary>' is not recognized`, and an already-open terminal will keep saying it
 even after the PATH entry is written — that's expected; open a new one.
 
-**`running install.ps1: ...` from `<binary> update`** — the installer itself failed;
-its own output is streamed above the error. `no PowerShell found on PATH` instead means
-neither `pwsh` nor `powershell` was found, which shouldn't happen on a stock Windows.
+**`running install.ps1: ...` from `<binary> update`** — fetching or running the installer
+failed; its own output is streamed above the error. `no PowerShell found on PATH` instead
+means neither `pwsh` nor `powershell` was found, which shouldn't happen on stock Windows.
 
 **`... cannot be loaded because running scripts is disabled on this system`** — the
-execution policy blocked a saved `install.ps1`. The `irm | iex` one-liner is unaffected
-(nothing is saved to disk), and `<binary> update` passes `-ExecutionPolicy Bypass` for
-the same reason. To run a copy you downloaded yourself:
+execution policy blocked a saved `install.ps1`. The `irm | iex` one-liner and
+`<binary> update` are unaffected because neither saves the PowerShell installer to disk.
+To run a copy you downloaded yourself:
 `powershell -ExecutionPolicy Bypass -File .\install.ps1`.

@@ -170,6 +170,17 @@ func TestScriptName(t *testing.T) {
 	}
 }
 
+func TestInstallScriptURLUsesPlatformInstaller(t *testing.T) {
+	for goos, want := range map[string]string{
+		"windows": "/install.ps1",
+		"linux":   "/install.sh",
+	} {
+		if got := installScriptURL(testRepo, goos); !strings.HasSuffix(got, want) {
+			t.Errorf("installScriptURL(%q, %q) = %q, want suffix %q", testRepo, goos, got, want)
+		}
+	}
+}
+
 func TestInterpreterUnix(t *testing.T) {
 	argv, err := interpreter("linux", "/tmp/install.sh")
 	if err != nil {
@@ -188,11 +199,10 @@ func TestInterpreterUnix(t *testing.T) {
 
 // The Windows branch depends on a PowerShell being on PATH, which a Unix test
 // runner has no reason to have -- so assert on whichever outcome the machine
-// can produce. Either way the flags are the part that matters: Bypass is what
-// lets a just-downloaded script run, and --no-modify-path is what keeps an
-// installed binary from being asked about PATH again.
+// can produce. The command construction itself is covered independently below.
 func TestInterpreterWindows(t *testing.T) {
-	argv, err := interpreter("windows", `C:\tmp\install.ps1`)
+	const url = "https://example.test/install.ps1"
+	argv, err := interpreter("windows", url)
 	if err != nil {
 		if _, lookErr := exec.LookPath("pwsh"); lookErr == nil {
 			t.Fatalf("pwsh is on PATH but interpreter failed: %v", err)
@@ -204,12 +214,33 @@ func TestInterpreterWindows(t *testing.T) {
 	}
 
 	joined := strings.Join(argv, " ")
-	for _, want := range []string{"-ExecutionPolicy Bypass", "-NoProfile", `-File C:\tmp\install.ps1`, "--no-modify-path"} {
+	for _, want := range []string{"-NoProfile", "-NonInteractive", "-Command", "Invoke-RestMethod", url, "-NoModifyPath"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("argv %q is missing %q", argv, want)
 		}
 	}
-	if argv[len(argv)-1] != "--no-modify-path" {
-		t.Errorf("argv %q must end in --no-modify-path", argv)
+	if strings.Contains(joined, "-File") {
+		t.Errorf("argv %q should execute the installer in memory, not from a file", argv)
+	}
+}
+
+func TestPowerShellInstallerArgs(t *testing.T) {
+	argv := powershellInstallerArgs("powershell.exe", "https://example.test/it's/install.ps1")
+	if len(argv) != 5 {
+		t.Fatalf("argv = %q, want executable, three flags, and command", argv)
+	}
+	if argv[0] != "powershell.exe" || argv[3] != "-Command" {
+		t.Fatalf("argv = %q, want powershell.exe ... -Command <command>", argv)
+	}
+	command := argv[4]
+	for _, want := range []string{
+		"Invoke-RestMethod -UseBasicParsing -TimeoutSec 30",
+		"'https://example.test/it''s/install.ps1'",
+		") -NoModifyPath",
+		"if ($code -ne 0) { exit $code }",
+	} {
+		if !strings.Contains(command, want) {
+			t.Errorf("command %q is missing %q", command, want)
+		}
 	}
 }

@@ -9,9 +9,9 @@
   YAML, and save it atomically.
 - `selfupdate` — check GitHub for a newer release (via the `/releases/latest`
   redirect, no API) and install it by running the repo's own installer —
-  `install.sh` under `sh`, or `install.ps1` under PowerShell on Windows —
-  against the running binary's directory. Includes `NewUpdateCommand`, the
-  shared cobra `update` command used by the apps.
+  `install.sh` under `sh`, or an in-memory `Invoke-RestMethod`/PowerShell flow on
+  Windows — against the running binary's directory. Includes `NewUpdateCommand`,
+  the shared cobra `update` command used by the apps.
 - `stream` — run a subprocess and relay its stdout+stderr to a `Reporter` one
   line at a time as it arrives (splitting on `\r` as well as `\n`, so progress
   bars stream), folding the last line into the error on a non-zero exit. The
