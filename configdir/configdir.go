@@ -1,7 +1,5 @@
-// Package configdir is the small layer of per-app config plumbing the monorepo apps
-// kept duplicating: the hidden ~/.<app> directory convention, YAML load where a missing
-// file is not an error, an atomic save that can't truncate a working config on failure,
-// and a surgical single-key edit that leaves the rest of the user's file alone.
+// Package configdir is the per-app config plumbing: the ~/.<app> directory, YAML load,
+// atomic save, and single-key edits that preserve the rest of the file.
 package configdir
 
 import (
@@ -12,9 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Dir returns ~/.<app>, the hidden config directory every app in the monorepo uses.
-// It errors when the home directory can't be determined rather than guessing a
-// fallback the user didn't ask for.
+// Dir returns ~/.<app>, erroring rather than guessing when home is unknown.
 func Dir(app string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -23,9 +19,8 @@ func Dir(app string) (string, error) {
 	return filepath.Join(home, "."+app), nil
 }
 
-// Load reads the YAML file at path into v. A missing file is not an error — v stays
-// zero, which is what every app's "first run" default already wants — while malformed
-// YAML surfaces the parse error instead of silently keeping a half-read config.
+// Load reads the YAML file at path into v. A missing file leaves v untouched; malformed
+// YAML is an error.
 func Load(path string, v any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -37,9 +32,19 @@ func Load(path string, v any) error {
 	return yaml.Unmarshal(data, v)
 }
 
-// SaveAtomic marshals v to YAML and writes it to <dir>/<name> atomically: the temp
-// file lives beside the target so rename stays on one filesystem, and a failed write
-// leaves the previous file untouched. Ported from gote's SaveConfig.
+// Ensure writes v to <dir>/<name> with SaveAtomic when that file does not exist yet, and
+// reports whether it did. An existing file is never touched.
+func Ensure(dir, name string, v any) (created bool, err error) {
+	if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	return true, SaveAtomic(dir, name, v)
+}
+
+// SaveAtomic marshals v to YAML and writes <dir>/<name> via a temp file and rename, so a
+// failed write leaves the previous file intact.
 func SaveAtomic(dir, name string, v any) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -79,21 +84,10 @@ func SaveAtomic(dir, name string, v any) error {
 	return nil
 }
 
-// SaveKey sets key=value on the top-level mapping of the YAML file at path, editing the
-// parsed node tree rather than re-marshalling a struct. Every other key, and every
-// comment the user wrote, survives untouched -- which a load-modify-save round trip
-// through a typed struct cannot promise, since it can only write the fields the struct
-// knows about and drops comments entirely.
-//
-// A missing file (and its parent directory) is created. seed supplies the initial
-// document for that case: nil starts from an empty mapping holding just this key, while
-// a value is marshalled first so the app's other defaults land alongside it. Both
-// behaviors were in use -- bubblestack's theme file wanted the former, gdaddon's config
-// the latter -- and the difference was the only thing separating two otherwise identical
-// copies of this function.
-//
-// The write is not atomic (unlike SaveAtomic): it is a read-modify-write of a file the
-// user may be editing, and the read half is what would go stale.
+// SaveKey sets key=value on the top-level mapping of the YAML file at path by editing the
+// node tree, so the user's other keys and comments survive. A missing file is created
+// from seed (nil starts from an empty mapping). Not atomic: it is a read-modify-write of
+// a file the user may be editing.
 func SaveKey(path, key, value string, seed any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -123,9 +117,8 @@ func SaveKey(path, key, value string, seed any) error {
 	return os.WriteFile(path, out, 0o644)
 }
 
-// setMappingScalar sets key=value on the top-level mapping of a parsed YAML document,
-// overwriting an existing key's value or appending the pair when absent. An empty
-// document is initialized to a mapping first.
+// setMappingScalar sets key=value on the document's top-level mapping, creating the
+// mapping if the document is empty.
 func setMappingScalar(doc *yaml.Node, key, value string) {
 	if len(doc.Content) == 0 {
 		doc.Kind = yaml.DocumentNode

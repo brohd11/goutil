@@ -104,3 +104,21 @@ func TestSaveAtomicCreatesDirAndOverwrites(t *testing.T) {
 		t.Errorf("dir contains %v, want exactly [config.yml]", entries)
 	}
 }
+
+func TestEnsure(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sub")
+	created, err := Ensure(dir, "c.yml", map[string]int{"a": 1})
+	if err != nil || !created {
+		t.Fatalf("first Ensure = (%v, %v), want (true, nil)", created, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c.yml"), []byte("a: 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err = Ensure(dir, "c.yml", map[string]int{"a": 1})
+	if err != nil || created {
+		t.Fatalf("second Ensure = (%v, %v), want (false, nil)", created, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "c.yml")); string(b) != "a: 2\n" {
+		t.Errorf("existing file rewritten: %q", b)
+	}
+}

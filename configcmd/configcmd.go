@@ -1,6 +1,5 @@
-// Package configcmd provides the shared `config` Cobra command used by the CLI
-// applications. Apps retain ownership of where their config lives and how a default
-// is materialized; this package owns only the command-line interaction.
+// Package configcmd provides the shared `config` cobra command. Apps own where their
+// config lives; this package owns the command-line interaction.
 package configcmd
 
 import (
@@ -15,9 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Options describes an app's config target. Path and Dir are resolved when the
-// command runs so tests and callers that change HOME see the current value. Ensure is
-// optional; when present it runs before either the file or directory is opened.
+// Options describes an app's config target. Path and Dir are resolved when the command
+// runs, so a changed HOME is seen. Ensure, when set, runs before anything is opened.
 type Options struct {
 	Path   func() (string, error)
 	Dir    func() (string, error)
@@ -26,9 +24,8 @@ type Options struct {
 
 var openPath = sysopen.OpenPath
 
-// NewCommand builds an opt-in `config` command. With no flag it edits the config
-// file using $EDITOR, falling back to $VISUAL and then to Notepad on Windows. --dir
-// opens the app's config directory in the OS file manager instead.
+// NewCommand builds the `config` command: it edits the config file in $EDITOR ($VISUAL,
+// then Notepad on Windows), or opens the config directory with --dir.
 func NewCommand(opts Options) *cobra.Command {
 	var openDir bool
 	cmd := &cobra.Command{
@@ -89,9 +86,7 @@ func runEditor(cmd *cobra.Command, path string) error {
 	return nil
 }
 
-// editorArgs resolves the editor independently of process launch so every platform's
-// policy can be tested on one host. Windows provides Notepad as the zero-configuration
-// fallback; explicit environment variables retain their usual priority everywhere.
+// editorArgs takes goos so every platform's policy can be tested on one host.
 func editorArgs(goos string) ([]string, error) {
 	raw := strings.TrimSpace(os.Getenv("EDITOR"))
 	name := "EDITOR"

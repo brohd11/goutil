@@ -27,9 +27,8 @@ func commandContext(ctx context.Context, argv []string) (*exec.Cmd, error) {
 		comspec = "cmd.exe"
 	}
 	cmd := exec.CommandContext(ctx, comspec)
-	// Supplying CmdLine bypasses os/exec's CommandLineToArgvW quoting. cmd.exe has
-	// its own grammar; node_modules shims need a second metacharacter escape because
-	// their forwarding layer parses the arguments again.
+	// CmdLine bypasses os/exec's quoting, since cmd.exe has its own grammar. node_modules
+	// shims parse arguments again, so they need a second metacharacter escape.
 	doubleMeta := isNodeCmdShim(path)
 	line, err := cmdJoin(append([]string{path}, argv[1:]...), doubleMeta)
 	if err != nil {

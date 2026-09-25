@@ -1,17 +1,10 @@
-// Package selfupdate implements the shared self-update mechanism for the
-// brohd11 Go apps: check GitHub for a newer release and, when one exists,
-// install it by running the same installer the READMEs tell users to fetch —
-// install.sh under sh on Unix, or the documented Invoke-RestMethod flow under
-// PowerShell on Windows — with BIN_DIR pointed at the running binary's directory
-// so the update lands in place, and --no-modify-path so an installed binary is
-// never asked about PATH again.
-//
-// Check resolves the latest tag via the /releases/latest redirect, so neither
-// the check nor the install touches the rate-limited GitHub API.
+// Package selfupdate checks GitHub for a newer release and installs it by running the
+// app's own installer (install.sh, or install.ps1 in PowerShell) with BIN_DIR set to the
+// running binary's directory. The latest tag comes from the /releases/latest redirect,
+// which avoids the rate-limited API.
 package selfupdate
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -23,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/brohd11/goutil/stream"
 )
 
 // Info is the outcome of Check: the running version, the latest release tag,
@@ -33,11 +28,8 @@ type Info struct {
 	Available bool
 }
 
-// Check resolves the latest release tag of repo ("owner/name") via the
-// /releases/latest redirect — github.com/<repo>/releases/latest answers 302
-// to /releases/tag/<tag>, which gives the tag without touching the
-// rate-limited API — and reports whether it is newer than current. A "dev"
-// build is never comparable, hence never offered an update.
+// Check resolves repo's latest release tag and reports whether it is newer than current.
+// A "dev" build is never offered an update.
 func Check(ctx context.Context, repo, current string) (Info, error) {
 	info := Info{Current: current}
 	tag, err := latestTag(ctx, releasesLatestURL(repo))
@@ -49,14 +41,9 @@ func Check(ctx context.Context, repo, current string) (Info, error) {
 	return info, nil
 }
 
-// Apply installs info.LatestTag of repo ("owner/name") into binDir by running the
-// platform's installer with BIN_DIR=binDir and VERSION pinned to the checked tag,
-// so it installs exactly what Check saw. Unix downloads install.sh before running
-// it; Windows has PowerShell fetch and execute install.ps1 in memory.
-// Overwriting the running binary is safe: both installers stage in a temp dir
-// before moving into place, and the Windows one displaces the running .exe by
-// renaming it (Windows locks it against overwrite, but not against rename).
-// The script's output is streamed line-by-line to report.
+// Apply installs info.LatestTag into binDir by running the platform installer with
+// VERSION pinned, streaming its output to report. Replacing the running binary is safe:
+// the installers stage in a temp dir, and on Windows the running .exe is renamed aside.
 func Apply(ctx context.Context, repo string, info Info, binDir string, report func(string, ...any)) error {
 	if report == nil {
 		report = func(string, ...any) {}
@@ -84,37 +71,15 @@ func Apply(ctx context.Context, repo string, info Info, binDir string, report fu
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(),
-		"BIN_DIR="+binDir,
-		"VERSION="+info.LatestTag,
-	)
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
-
-	scanDone := make(chan struct{})
-	go func() {
-		defer close(scanDone)
-		sc := bufio.NewScanner(pr)
-		for sc.Scan() {
-			report("%s", sc.Text())
-		}
-	}()
-
-	runErr := cmd.Run()
-	pw.Close()
-	<-scanDone
-	if runErr != nil {
-		return fmt.Errorf("running %s: %w", name, runErr)
+	env := append(os.Environ(), "BIN_DIR="+binDir, "VERSION="+info.LatestTag)
+	if err := stream.Cmd(ctx, "", env, report, argv...); err != nil {
+		return fmt.Errorf("running %s: %w", name, err)
 	}
 	return nil
 }
 
-// BinDir is the directory of the running executable, symlinks deliberately
-// unresolved: a dev install (install_unix.sh) is a symlink in ~/.local/bin,
-// and install.sh's mv -f then replaces the symlink itself with the real
-// release binary.
+// BinDir is the running executable's directory, symlinks unresolved: a dev install is a
+// symlink that the installer then replaces with the release binary.
 func BinDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -134,9 +99,7 @@ var (
 	}
 )
 
-// scriptName is the installer published for goos. Both live at the root of
-// every app repo and take the same BIN_DIR/VERSION env vars and the same
-// --no-modify-path flag, so nothing above this line has to care which is which.
+// scriptName is the installer published for goos. Both take the same env vars and flags.
 func scriptName(goos string) string {
 	if goos == "windows" {
 		return "install.ps1"
@@ -144,12 +107,9 @@ func scriptName(goos string) string {
 	return "install.sh"
 }
 
-// interpreter is the argv for running an installer non-interactively. source is a
-// downloaded script path on Unix and the install.ps1 URL on Windows.
-//
-// On Windows, PowerShell fetches the script with Invoke-RestMethod and executes it
-// in memory. pwsh (PowerShell 7) is preferred when installed and powershell (Windows
-// PowerShell 5.1, present on every Windows install) is the fallback.
+// interpreter is the argv that runs an installer non-interactively. source is a script
+// path on Unix and the install.ps1 URL on Windows, where pwsh is preferred over
+// powershell.
 func interpreter(goos, source string) ([]string, error) {
 	if goos != "windows" {
 		return []string{"sh", source, "--no-modify-path"}, nil
@@ -168,11 +128,8 @@ func interpreter(goos, source string) ([]string, error) {
 	return powershellInstallerArgs(shell, source), nil
 }
 
-// powershellInstallerArgs builds the in-memory equivalent of the documented
-// `irm <url> | iex` install. A scriptblock is used so --no-modify-path can be passed;
-// dot-sourcing leaves the installer's $code visible so failures become process exit
-// failures that Apply can report. The URL is a PowerShell single-quoted literal, where
-// an embedded quote is represented by two quotes.
+// powershellInstallerArgs is the in-memory form of `irm <url> | iex`, via a scriptblock so
+// --no-modify-path can be passed and a failing $code becomes the exit status.
 func powershellInstallerArgs(shell, url string) []string {
 	quotedURL := "'" + strings.ReplaceAll(url, "'", "''") + "'"
 	command := "$ErrorActionPreference = 'Stop'; " +
@@ -181,10 +138,13 @@ func powershellInstallerArgs(shell, url string) []string {
 	return []string{shell, "-NoProfile", "-NonInteractive", "-Command", command}
 }
 
+// httpTimeout bounds each release request.
+const httpTimeout = 30 * time.Second
+
 // download GETs the Unix installer into path without requiring curl. Windows uses
 // Invoke-RestMethod directly in powershellInstallerArgs instead.
 func download(ctx context.Context, url, path string) error {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: httpTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -213,7 +173,7 @@ func download(ctx context.Context, url, path string) error {
 // reads the tag off the Location header.
 func latestTag(ctx context.Context, url string) (string, error) {
 	client := &http.Client{
-		Timeout: 30 * time.Second, // matches bubblestack's selfUpdateCheckTimeout
+		Timeout: httpTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -237,9 +197,7 @@ func latestTag(ctx context.Context, url string) (string, error) {
 	return loc[i+len(marker):], nil
 }
 
-// normalize reduces a git describe version to its base tag: any dash in the
-// output introduces the -N-g<hash>[-dirty] suffix, e.g. "v0.1.1-2-gdfdcacf"
-// becomes "v0.1.1". "dev" stays "dev" and is never comparable.
+// normalize strips a git-describe suffix: "v0.1.1-2-gdfdcacf" becomes "v0.1.1".
 func normalize(v string) string {
 	if i := strings.Index(v, "-"); i >= 0 {
 		v = v[:i]
@@ -247,9 +205,8 @@ func normalize(v string) string {
 	return v
 }
 
-// newer reports whether latest is a higher semver tag than current. Anything
-// unparseable ("dev", malformed tags) is treated as not newer — better to skip
-// an update than to reinstall on a misunderstanding.
+// newer reports whether latest is a higher semver tag than current. Anything unparseable
+// is not newer: skipping an update beats reinstalling on a misread.
 func newer(current, latest string) bool {
 	c, okC := parseSemver(current)
 	l, okL := parseSemver(latest)

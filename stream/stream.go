@@ -1,8 +1,4 @@
-// Package stream runs a subprocess and relays its output to a caller-supplied reporter one
-// line at a time as it arrives. It's a domain-neutral port of what was gitstack's GitStream
-// (and its near-verbatim twin in golaunch): the streaming machinery knows nothing about the
-// program being run — git, a build script, any command — so it can back any tool that
-// executes a process and wants its progress surfaced live in a log pane or on stdout.
+// Package stream runs a subprocess and relays its output line by line to a Reporter.
 package stream
 
 import (
@@ -18,15 +14,9 @@ import (
 // TUI funnels them into its log — the streamer only calls it, never assumes where they go.
 type Reporter func(format string, args ...any)
 
-// Cmd runs argv (argv[0] is the program) in dir, relaying its stdout+stderr to report one
-// line at a time as it arrives, and returns a non-nil error when the program exits non-zero
-// (with its last line of output folded in, the part usually worth reading). stdout and
-// stderr are interleaved the way a terminal would show them — a program often writes
-// progress and errors to stderr, and a caller streaming to a log wants both.
-//
-// dir "" means the current working directory; env nil means the process's own environment
-// (both are just exec's defaults, left alone). ctx cancellation kills the subprocess, which
-// is how a TUI's task-abort works.
+// Cmd runs argv in dir (""=cwd) with env (nil=inherited), relaying interleaved
+// stdout/stderr to report line by line. A non-zero exit returns an error carrying the
+// last output line. Cancelling ctx kills the process.
 func Cmd(ctx context.Context, dir string, env []string, report Reporter, argv ...string) error {
 	if len(argv) == 0 {
 		return fmt.Errorf("no command to run")
@@ -56,11 +46,8 @@ func Cmd(ctx context.Context, dir string, env []string, report Reporter, argv ..
 	return nil
 }
 
-// lineWriter turns a subprocess's byte stream into whole lines for a Reporter, breaking on
-// \r as well as \n: progress bars ("Receiving objects:  47%…") are carriage-return
-// delimited, so otherwise a whole progress meter would arrive as one unreadable line. It
-// keeps the last line reported so a failing command can quote the program's parting words
-// in its error.
+// lineWriter splits a byte stream into lines on \r as well as \n (progress meters are
+// \r-delimited), remembering the last line for error messages.
 type lineWriter struct {
 	report Reporter
 	buf    []byte

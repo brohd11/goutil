@@ -62,3 +62,52 @@ func TestExpandHome(t *testing.T) {
 		})
 	}
 }
+
+func TestCount(t *testing.T) {
+	for n, want := range map[int]string{0: "0 files", 1: "1 file", 3: "3 files"} {
+		if got := Count(n, "file"); got != want {
+			t.Errorf("Count(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestRelUnder(t *testing.T) {
+	base := filepath.FromSlash("/a/b")
+	cases := []struct {
+		path    string
+		wantRel string
+		wantOK  bool
+	}{
+		{"/a/b", ".", true},
+		{"/a/b/c", "c", true},
+		{"/a/b/c/d", filepath.FromSlash("c/d"), true},
+		{"/a/b/..foo", "..foo", true},
+		{"/a", "", false},
+		{"/a/bc", "", false},
+		{"/x/y", "", false},
+	}
+	for _, tc := range cases {
+		rel, ok := RelUnder(base, filepath.FromSlash(tc.path))
+		if rel != tc.wantRel || ok != tc.wantOK {
+			t.Errorf("RelUnder(%q, %q) = (%q, %v), want (%q, %v)", base, tc.path, rel, ok, tc.wantRel, tc.wantOK)
+		}
+	}
+}
+
+func TestContractHome(t *testing.T) {
+	home := filepath.FromSlash("/home/bob")
+	cases := map[string]string{
+		"/home/bob":         "~",
+		"/home/bob/notes":   filepath.FromSlash("~/notes"),
+		"/home/bobby/notes": filepath.FromSlash("/home/bobby/notes"),
+		"/etc":              filepath.FromSlash("/etc"),
+	}
+	for in, want := range cases {
+		if got := ContractHome(filepath.FromSlash(in), home); got != want {
+			t.Errorf("ContractHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := ContractHome("/x", ""); got != "/x" {
+		t.Errorf("empty home: got %q", got)
+	}
+}

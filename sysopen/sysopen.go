@@ -1,6 +1,4 @@
-// Package sysopen hands filesystem paths to the operating system's file manager, and
-// URLs to its browser. It contains no TUI or CLI policy, so both interactive apps and
-// ordinary commands can share the same cross-platform launchers.
+// Package sysopen opens paths in the OS file manager and URLs in the browser.
 package sysopen
 
 import (
@@ -15,10 +13,8 @@ var buildPathCommand = func(path string, reveal bool) *exec.Cmd {
 	return pathCommand(runtime.GOOS, path, reveal)
 }
 
-// OpenPath opens path in the OS file manager. When reveal is true, a file is
-// highlighted in its containing directory where the platform supports that gesture.
-// The launcher is detached: success means the OS command started successfully, not
-// that the file manager remained open or displayed the path.
+// OpenPath opens path in the file manager, highlighting a file in its folder when reveal
+// is set and the platform supports it. Success means the launcher started.
 func OpenPath(path string, reveal bool) error {
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
@@ -53,12 +49,8 @@ func pathCommand(goos, path string, reveal bool) *exec.Cmd {
 	}
 }
 
-// OpenURL opens target in the default browser. Unix launches the desktop opener as a
-// detached process; Windows calls ShellExecuteW directly so URL query-string characters
-// never cross a cmd.exe parsing boundary.
-//
-// target is used as-is — any scheme or host normalization is the caller's job, since
-// this package names no domain type.
+// OpenURL opens target, as given, in the default browser. Windows uses ShellExecuteW so
+// query strings never pass through cmd.exe.
 func OpenURL(target string) error {
 	if target == "" {
 		return fmt.Errorf("open url: empty target")

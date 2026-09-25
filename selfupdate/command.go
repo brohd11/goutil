@@ -7,13 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewUpdateCommand returns the shared `update` cobra command: it compares the
-// running binary's version against the latest release of repo ("owner/name")
-// and, with no flags, installs the update in place (over wherever the binary
-// lives). name is the display name used in messages ("repoview", "gossh").
-//
-// Apps with a fancier surface (gdaddon's --json/--interactive self-update)
-// build their own command on Check/Apply instead.
+// NewUpdateCommand returns the shared `update` command: it compares the running version
+// with repo's latest release and installs it in place. name is used in messages.
 func NewUpdateCommand(repo, name, version string) *cobra.Command {
 	var checkOnly bool
 	cmd := &cobra.Command{

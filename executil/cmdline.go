@@ -7,10 +7,8 @@ import (
 
 const cmdMeta = "()[]%!^\"" + "`" + `<>&|;,*? `
 
-// cmdQuote renders one argument for cmd.exe. The result survives both cmd's
-// metacharacter pass and the Windows argv parser used by the child process.
-// doubleMeta is needed when cmd invokes a batch file, where the line is parsed
-// once by cmd and again by the batch-file machinery.
+// cmdQuote renders one argument for cmd.exe so it survives both cmd's metacharacter pass
+// and the child's argv parser. doubleMeta is for batch files, which parse the line twice.
 func cmdQuote(arg string, doubleMeta bool) string {
 	var quoted strings.Builder
 	quoted.Grow(len(arg) + 2)
@@ -41,9 +39,8 @@ func cmdQuote(arg string, doubleMeta bool) string {
 	return value
 }
 
-// CmdJoin renders argv as one command line for cmd.exe. It is intended for terminal
-// launchers which deliberately keep a command prompt open; ordinary subprocesses
-// should use Command or CommandContext instead.
+// CmdJoin renders argv as one cmd.exe command line, for terminal launchers that keep a
+// prompt open. Ordinary subprocesses should use Command.
 func CmdJoin(argv []string) (string, error) { return cmdJoin(argv, false) }
 
 func cmdJoin(argv []string, doubleMeta bool) (string, error) {

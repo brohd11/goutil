@@ -1,19 +1,15 @@
-// Package strutil holds the tiny string and path helpers that every app in the monorepo
-// ended up hand-rolling for itself — plural selection, home-dir expansion, path depth —
-// so the next app doesn't roll a fourth copy.
+// Package strutil holds small string and path helpers shared across the monorepo's apps.
 package strutil
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
-// Plural picks the noun form to sit after a count: one when n == 1, many otherwise
-// (zero takes many, the usual English convention for "0 items"). It exists because
-// three monorepo apps hand-rolled this exact branch; it deliberately returns just the
-// word — callers keep their own formatting and embed the result themselves.
+// Plural returns one when n == 1 and many otherwise (so zero takes many).
 func Plural(n int, one, many string) string {
 	if n == 1 {
 		return one
@@ -21,14 +17,13 @@ func Plural(n int, one, many string) string {
 	return many
 }
 
-// ExpandHome expands a leading "~", "~/...", or "~\\..." to the current user's home directory
-// and passes every other path through unchanged. "~user" forms are rejected rather
-// than guessed: only the current user's home shorthand is supported, and accepting
-// a literal "~other" as a path is never what the user meant.
-//
-// The semantics mirror what was gote's normalizeVaultPath, minus that function's
-// trim/empty validation and its must-exist-and-be-a-directory check — callers decide
-// what the path has to be; this helper only resolves the tilde.
+// Count renders n with a regular plural noun: "1 file", "3 files".
+func Count(n int, noun string) string {
+	return strconv.Itoa(n) + " " + Plural(n, noun, noun+"s")
+}
+
+// ExpandHome expands a leading "~", "~/..." or "~\..." to the current user's home directory
+// and returns any other path unchanged. "~user" forms are an error.
 func ExpandHome(path string) (string, error) {
 	if path == "~" || len(path) > 1 && path[0] == '~' && (path[1] == '/' || path[1] == '\\') {
 		home, err := os.UserHomeDir()
@@ -38,10 +33,8 @@ func ExpandHome(path string) (string, error) {
 		if path == "~" {
 			return home, nil
 		}
+		// Accept either separator so examples copied between PowerShell and Unix shells work.
 		rest := strings.TrimLeft(path[1:], `/\`)
-		// Tilde paths are user-facing rather than native filesystem literals. Treat
-		// both separator spellings consistently so copied examples work unchanged
-		// in PowerShell and Unix shells.
 		rest = strings.NewReplacer("/", string(filepath.Separator), "\\", string(filepath.Separator)).Replace(rest)
 		return filepath.Join(home, rest), nil
 	}
@@ -51,15 +44,35 @@ func ExpandHome(path string) (string, error) {
 	return path, nil
 }
 
-// Depth reports how many path segments separate path from base: 0 when they are the same
-// directory, 1 for a direct child, and so on. An unrelated path (one filepath.Rel cannot
-// express) is also 0, so a caller walking a tree treats it as the root rather than
-// letting a negative or garbage depth through.
-//
-// It exists because four copies of this arithmetic were in circulation — gitstack,
-// gdaddon twice (once inlined into a walk), and gote under the name dirDepth. A
-// depth-limited walk that is off by one silently stops finding things, which is the kind
-// of bug that gets noticed months later as "it missed a repo".
+// ContractHome is ExpandHome's inverse: a path at or under home comes back as "~" or
+// "~<sep>rest". Anything else, or an empty home, is returned unchanged.
+func ContractHome(path, home string) string {
+	if home == "" {
+		return path
+	}
+	rel, ok := RelUnder(home, path)
+	if !ok {
+		return path
+	}
+	if rel == "." {
+		return "~"
+	}
+	return "~" + string(filepath.Separator) + rel
+}
+
+// RelUnder returns path relative to base when path is base itself (rel ".") or inside it.
+// ok is false for anything outside base, including when filepath.Rel fails. A child named
+// "..foo" is inside.
+func RelUnder(base, path string) (rel string, ok bool) {
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
+}
+
+// Depth reports how many path segments separate path from base: 0 for the same directory,
+// 1 for a direct child. A path Rel cannot relate also reports 0.
 func Depth(base, path string) int {
 	rel, err := filepath.Rel(base, path)
 	if err != nil || rel == "." {
