@@ -35,12 +35,14 @@ func IsText(path string) bool {
 		return false
 	}
 	if n == sniffLen {
-		// The read can cut a multi-byte rune; drop up to UTFMax-1 undecodable trailing bytes.
-		for i := 0; i < utf8.UTFMax-1 && len(buf) > 0; i++ {
-			if r, size := utf8.DecodeLastRune(buf); r != utf8.RuneError || size != 1 {
-				break
-			}
-			buf = buf[:len(buf)-1]
+		// Only drop an incomplete rune that the read could have cut. FullRune treats
+		// invalid encodings as complete, so they remain for Valid to reject below.
+		start := len(buf) - 1
+		for start > len(buf)-utf8.UTFMax && !utf8.RuneStart(buf[start]) {
+			start--
+		}
+		if !utf8.FullRune(buf[start:]) {
+			buf = buf[:start]
 		}
 	}
 	return utf8.Valid(buf)
