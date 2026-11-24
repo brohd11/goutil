@@ -67,6 +67,45 @@ func TestIsTextTruncatedRune(t *testing.T) {
 	}
 }
 
+func TestIsTextSniffBoundary(t *testing.T) {
+	cases := []struct {
+		name      string
+		prefixLen int
+		tail      string
+		want      bool
+	}{
+		{"invalid_start", sniffLen - 1, "\xffmore", false},
+		{"stray_continuation", sniffLen - 1, "\x80more", false},
+		{"overlong_encoding", sniffLen - 2, "\xe0\x80more", false},
+		{"surrogate_encoding", sniffLen - 2, "\xed\xa0more", false},
+		{"out_of_range_encoding", sniffLen - 2, "\xf4\x90more", false},
+		{"invalid_before_split_rune", sniffLen - 2, "\xff€more", false},
+		{"short_invalid", sniffLen - 2, "\xff", false},
+		{"full_invalid", sniffLen - 1, "\xff", false},
+		{"short_incomplete", sniffLen - 2, "\xe2", false},
+		{"full_rune", sniffLen - 4, "😀", true},
+		{"two_byte_split", sniffLen - 1, "émore", true},
+		{"three_byte_split_one", sniffLen - 1, "☃more", true},
+		{"three_byte_split_two", sniffLen - 2, "☃more", true},
+		{"four_byte_split_one", sniffLen - 1, "😀more", true},
+		{"four_byte_split_two", sniffLen - 2, "😀more", true},
+		{"four_byte_split_three", sniffLen - 3, "😀more", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "sample")
+			content := strings.Repeat("a", tc.prefixLen) + tc.tail
+			if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := IsText(p); got != tc.want {
+				t.Errorf("IsText() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestIsTextUnreadable: what cannot be opened is not a document. A directory
 // stands in for the general case (a dangling symlink, a permission-denied file).
 func TestIsTextUnreadable(t *testing.T) {
